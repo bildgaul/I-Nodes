@@ -3,23 +3,28 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <dirent.h>
 
 char PNAME[16]; // process name, used for output
 
 void
-printFile(struct stat sb, char *name)
+printFile(const struct stat sb, const char *name, FILE *fin)
 {
-  printf("Name: %s\n", name);
-  printf("Size: %jd bytes\n", (uintmax_t)sb.st_size);
-  printf("Number of allocated blocks: %jd bytes\n", (intmax_t)sb.st_blocks);
-  printf("I-Node number: %ju\n", (uintmax_t)sb.st_ino);
-  printf("Number of links: %ju\n", (uintmax_t)sb.st_nlink);
+  if (S_ISDIR(sb.st_mode))
+      fprintf(fin, "DIR%s [label = \"", name);
+  else
+    fprintf(fin, "%s [label = \"", name);
+  
+  fprintf(fin, "Name: %s\\n", name);
+  fprintf(fin, "Size: %jd bytes\\n", (uintmax_t)sb.st_size);
+  fprintf(fin, "Number of allocated blocks: %jd bytes\\n", (intmax_t)sb.st_blocks);
+  fprintf(fin, "I-Node number: %ju\\n", (uintmax_t)sb.st_ino);
+  fprintf(fin, "Number of links: %ju", (uintmax_t)sb.st_nlink);
+  fprintf(fin, "\"]\n");
 }
 
 void
-printDir(struct stat sb, char *name)
+printDir(struct stat sb, char *name, FILE *fin)
 {
   DIR *dir;
   struct dirent *de;
@@ -34,8 +39,11 @@ printDir(struct stat sb, char *name)
     return;
   }
 
-  printFile(sb, name);
-
+  char *p;
+  for (p = name + strlen(name); p >= name && *p != '/'; p--);
+  p++;
+  printFile(sb, p, fin);
+  
   do{
     if ((de = readdir(dir)) != NULL){
       char *fileName = de->d_name;
@@ -49,17 +57,18 @@ printDir(struct stat sb, char *name)
 	  closedir(dir);
 	  return;
 	}
-	
 	if (S_ISDIR(sb.st_mode)){
-	  printDir(sb, pathName);
+	  fprintf(fin, "\tDIR%s -> ", p);
+	  printDir(sb, pathName, fin);
 	}
 	else{
-	  printFile(sb, fileName);
+	  fprintf(fin, "\tDIR%s -> ", p);
+	  printFile(sb, fileName, fin);
 	}
       }
     }
   } while (de != NULL);
-
+  
   closedir(dir);
   return;
 }
@@ -68,13 +77,19 @@ int
 main(int argc, char *argv[])
 {
   char *PNAME = argv[0];
- 
+  
   struct stat sb;
   if (argc != 2){
     fprintf(stderr, "Usage: %s <pathname>\n", PNAME);
     return -1;
   }
   
-  printDir(sb, argv[1]);
+  FILE *fin;
+  fin = fopen("inodes.gv", "w");
+  fprintf(fin, "digraph inodes{\n");
+  fprintf(fin, "\tnode [shape=folder];\n\t");
+  printDir(sb, argv[1], fin);
+  fprintf(fin, "}");
+  fclose(fin);
   return 0;
 }
